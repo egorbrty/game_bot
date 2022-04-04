@@ -25,18 +25,8 @@ class Player:
         self.objects = [mafia_role, mafia_shield, mafia_documents,
                         uno_skips, uno_change_color, uno_cards]
 
-    def equal(self, other):
-        if type(other) == str:
-            if self.id == other:
-                return True
-
-        else:
-            if self.id == other.id:
-                return True
-
-        return False
-
     def print_info(self):
+        """Пишет информацию о профиле игроку"""
         text = self.get_info()
 
         keyboard = types.InlineKeyboardMarkup()
@@ -61,6 +51,7 @@ class Player:
         return text
 
     def use_object(self, obj_id):
+        """Тратит объект. Возвращает 1 если объект потрачен и 0, если объекта нет"""
         if self.objects[obj_id]:
             self.objects[obj_id] -= 1
             self.load_info()
@@ -110,6 +101,7 @@ _Уно_
                                   text="Что ты хочешь купить?")
 
     def buy(self, call):
+        """Купить предмет"""
         if self.money < price[int(call.data)]:
             self.bot.answer_callback_query(callback_query_id=call.id, show_alert=False,
                                            text="Недостаточно средств. Нужно больше играть!")
@@ -130,6 +122,7 @@ _Уно_
         self.load_info()
 
     def back_shop(self, call):
+        """Вернуться из магазина"""
         text = self.get_info()
 
         keyboard = types.InlineKeyboardMarkup()
@@ -143,6 +136,7 @@ _Уно_
         self.bot.answer_callback_query(callback_query_id=call.id, show_alert=True)
 
     def load_info(self):
+        """Загрузка информации о пользователе в БД"""
         con = sqlite3.connect("files/players.sqlite")
         cur = con.cursor()
 
@@ -160,6 +154,7 @@ WHERE ID={self.id}""")
         con.close()
 
     def add_player(self):
+        """Новый игрок"""
         con = sqlite3.connect("files/players.sqlite")
         cur = con.cursor()
 
@@ -170,6 +165,7 @@ WHERE ID={self.id}""")
         con.close()
 
 def get_players(bot):
+    """Возвращает массив экземпляров класса Player"""
     con = sqlite3.connect("files/players.sqlite")
 
     cur = con.cursor()
