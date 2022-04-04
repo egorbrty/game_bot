@@ -4,21 +4,36 @@ import time
 from telebot import types
 import threading
 import requests
+from players import *
 
 
 TOKEN = '5220830717:AAHoxS5mT7ODuAAirBtJt59gC5EEuMBac8w'
 
 print('''------------------restart------------------''')
 
-bot = telebot.TeleBot(TOKEN)
+
+class MyBot(telebot.TeleBot):
+    def __init__(self, token):
+        super().__init__(token)
+
+    def send_message(self, *args, **args2):
+        try:
+            a = super().send_message(*args, **args2)
+            return a
+        except Exception as error:
+            print(error)
+
+
+bot = MyBot(TOKEN)
 
 mafia_games = {}
-players = {}
 mafia_registrations = {}
+players = get_players(bot)
+
 # Ключи - id групп, значения - [зарегистрированные игроки, id сообщения о начале регистрации, время окончания]
 
 
-class Game:
+class GameMafia:
     def __init__(self, group_id):
         self.group_id = group_id
 
@@ -45,77 +60,193 @@ class Timer:
         self.thread = threading.Thread(target=self.loop)
         self.thread.start()
 
-    def start_registration(self, group_id, time_for_registration=60):
+    def start_registration(self, group_id, time_for_registration=90):
         return int(time.time()) + time_for_registration
 
     def loop(self):
         while True:
             now = int(time.time())
-            for i in mafia_registrations.copy():
-                if mafia_registrations[i][2] == now + 2:
-                    keyboard = types.InlineKeyboardMarkup()
-                    callback_button = types.InlineKeyboardButton(text="Зарегистрироваться", callback_data="register")
-                    keyboard.add(callback_button)
 
-                    message = bot.send_message(chat_id=i,
-                                               text='До окончания регистрации осталась 1 минута. Поторопитесь!',
-                                               reply_to_message_id=mafia_registrations[i][1][0],
-                                               reply_markup=keyboard)
-                    mafia_registrations[i][1].append(message.id)
+            for i in mafia_registrations.copy(): 
+                try:
+                    if not isBotAdmin(i):
+                        del mafia_registrations[i]
 
-                elif mafia_registrations[i][2] == now + 1:
-                    keyboard = types.InlineKeyboardMarkup()
-                    callback_button = types.InlineKeyboardButton(text="Зарегистрироваться", callback_data="register")
-                    keyboard.add(callback_button)
+                    if mafia_registrations[i][2] == now + 60:
+                        keyboard = types.InlineKeyboardMarkup()
+                        callback_button = types.InlineKeyboardButton(text="Зарегистрироваться", callback_data="register")
+                        keyboard.add(callback_button)
 
-                    message = bot.send_message(chat_id=i,
-                                               text='До окончания регистрации осталось 30 секунд. Поторопитесь!',
-                                               reply_to_message_id=mafia_registrations[i][1],
-                                               reply_markup=keyboard)
-                    mafia_registrations[i][1].append(message.id)
+                        message = bot.send_message(chat_id=i,
+                                                   text='До окончания регистрации осталась 1 минута. Поторопитесь!',
+                                                   reply_to_message_id=mafia_registrations[i][1][0],
+                                                   reply_markup=keyboard)
+                        mafia_registrations[i][1].append(message.id)
 
-                elif mafia_registrations[i][2] <= now:
-                    game = Game(i)
-                    mafia_games[i] = game
+                    elif mafia_registrations[i][2] == now + 30:
+                        keyboard = types.InlineKeyboardMarkup()
+                        callback_button = types.InlineKeyboardButton(text="Зарегистрироваться", callback_data="register")
+                        keyboard.add(callback_button)
 
-                    del mafia_registrations[i]
+                        message = bot.send_message(chat_id=i,
+                                                   text='До окончания регистрации осталось 30 секунд. Поторопитесь!',
+                                                   reply_to_message_id=mafia_registrations[i][1],
+                                                   reply_markup=keyboard)
+                        mafia_registrations[i][1].append(message.id)
 
-            for i in mafia_games:
-                mafia_games[i].iteration()
+                    elif mafia_registrations[i][2] <= now:
+                        game = GameMafia(i)
+                        mafia_games[i] = game
+
+                        del mafia_registrations[i]
+                except Exception:
+                    "В случае, если регистрация закончится в другом потоке"
+                    print('Thread error registration')
+                    pass
+
+            for i in mafia_games.copy():
+                try:
+                    if not isBotAdmin(i):
+                        del mafia_games[i]
+
+                    mafia_games[i].iteration()
+                except Exception:
+                    # В случае, если игра закончится в другом потоке
+                    print('Thread error game')
 
             time.sleep(1)
-
 
 
 timer = Timer()
 
 
-class Player:
-    def __init__(self, player_id, money):
-        self.id = player_id
+def isBotAdmin(chat_id):
+    mas = bot.get_chat_administrators(chat_id)
 
-    def equal(self, other):
-        if type(other) == str:
-            if self.id == other:
+    for i in mas:
+        if i.user.id == bot.get_me().id:
+            mas = []
+
+            mas.append(i.can_edit_messages is None)
+            mas.append(i.can_edit_messages is None)
+            mas.append(i.can_pin_messages)
+            mas.append(i.can_delete_messages)
+
+            if all(mas):
                 return True
 
-        else:
-            if self.id == other.id:
-                return True
+            bot.send_message(
+                chat_id,
+                f'''Для работы бота нужны следующие права:
+{'✅' if mas[0] else '❌'} Отправлять сообщения
+{'✅' if mas[1] else '❌'} Изменять сообщения
+{'✅' if mas[2] else '❌'} Прикреплять сообщения
+{'✅' if mas[3] else '❌'} Удалять сообщения'''
+            )
 
-        return False
+            return False
+
+    return False
 
 
 @bot.message_handler(commands=['start'])
 def start_command(message):
+    bot.delete_message(
+        chat_id=message.chat.id,
+        message_id=message.id,
+    )
+
     bot.send_message(
         message.chat.id,
         'Привет! Я бот для игры в мафию! Напишите "/help" для получения дополнительной информации'
     )
 
+    if message.chat.type == 'private' and message.from_user.id not in players:
+        players[message.from_user.id] = Player(message.from_user.id, bot=bot)
+        players[message.from_user.id].add_player()
+
+    players[message.from_user.id].print_info()
+
+
+@bot.message_handler(commands=['profile'])
+def stop_registration(message):
+    if message.chat.type == 'private':
+        players[message.from_user.id].print_info()
+
+@bot.message_handler(commands=['cancel_registration'])
+def stop_registration(message):
+    bot.delete_message(
+        chat_id=message.chat.id,
+        message_id=message.id,
+    )
+
+    if message.chat.type != 'group' and message.chat.type != 'supergroup':
+        bot.send_message(message.chat.id, 'Это действие возможно только в группе')
+        return
+
+    group_id = message.chat.id
+
+    if group_id in mafia_games:
+        bot.send_message(group_id, 'Вы уже играете!')
+        return
+
+    if group_id not in mafia_registrations:
+        bot.send_message(group_id, 'Вы не начали набор в игру')
+        return
+
+    for i in mafia_registrations[group_id][1]:
+        bot.delete_message(
+            chat_id=group_id,
+            message_id=i,
+        )
+
+    del mafia_registrations[group_id]
+
+    bot.send_message(group_id, 'Регистрация отменена')
+
+
+@bot.message_handler(commands=['continue_registration'])
+def registration_command_mafia(message):
+    bot.delete_message(
+        chat_id=message.chat.id,
+        message_id=message.id,
+    )
+
+    if message.chat.id in mafia_registrations:
+        time_continue = message.text.split('@')[0]
+        ch = 30
+        massiv = time_continue.split()
+
+        if len(massiv) == 1:
+            pass
+
+        elif len(massiv) > 2 or not massiv[1].isdigit:
+            bot.send_message(
+                message.chat.id,
+                'Параметр задан некорректно!'
+            )
+
+        else:
+            ch = int(massiv[1])
+
+        mafia_registrations[message.chat.id][2] += ch
+
+        now = int(time.time())
+        left = mafia_registrations[message.chat.id][2] - now
+
+        bot.send_message(
+            message.chat.id,
+            f'Регистрация продлена на {ch} сек. До её окончания осталось {left} сек.'
+        )
+
 
 @bot.message_handler(commands=['help'])
 def help_command(message):
+    bot.delete_message(
+        chat_id=message.chat.id,
+        message_id=message.id,
+    )
+
     bot.send_message(
         message.chat.id,
         'Как работает этот бот, вы можете понять методом тыка!'
@@ -124,19 +255,38 @@ def help_command(message):
 
 @bot.message_handler(commands=['registration_mafia'])
 def registration_command_mafia(message):
-    if message.chat.type == 'group':
-        start_registration_mafia(message.chat.id)
+    bot.delete_message(
+        chat_id=message.chat.id,
+        message_id=message.id,
+    )
 
+    if message.chat.type == 'group' or message.chat.type == 'supergroup':
+        start_registration_mafia(message.chat.id)
+    else:
+        bot.send_message(message.chat.id, 'Это действие доступно только для групп')
+
+
+@bot.message_handler(commands=['start_game'])
+def registration_command_mafia(message):
+    bot.delete_message(
+        chat_id=message.chat.id,
+        message_id=message.id,
+    )
+
+    if message.chat.id not in mafia_registrations:
+        bot.send_message(message.chat.id, 'Регистрация не ведется')
+    elif message.chat.type == 'group' or message.chat.type == 'supergroup':
+        game = GameMafia(message.chat.id)
+        mafia_games[message.chat.id] = game
+
+        del mafia_registrations[message.chat.id]
+    else:
+        bot.send_message(message.chat.id, 'Это действие доступно только для групп')
 
 
 @bot.message_handler(content_types=['text'])
 def get_text_messages(message):
-    if message.from_user.id in players:
-        bot.send_message(message.chat.id, 'Уже зареган')
-    else:
-        bot.send_message(message.from_user.id, 'Добро пожаловать')
-        new_player = Player(message.from_user.id, message.from_user.first_name)
-        players[message.from_user.id] = new_player
+    return
 
 
 def start_registration_mafia(group_id):
@@ -146,6 +296,8 @@ def start_registration_mafia(group_id):
 
     if group_id in mafia_games:
         bot.send_message(group_id, 'Вы уже играете!')
+        return
+    if not isBotAdmin(group_id):
         return
 
     # Проверка на то, ведутся ли еще игры
@@ -164,7 +316,6 @@ def start_registration_mafia(group_id):
 
 @bot.callback_query_handler(func=lambda call: True)
 def callback_inline(call):
-
     if call.message:  # Если вызов из чата с ботом
         if call.data == "register":
             if call.message.chat.id in mafia_registrations:
@@ -183,6 +334,7 @@ def callback_inline(call):
 
                     # Кнопка
                     keyboard = types.InlineKeyboardMarkup()
+
                     callback_button = types.InlineKeyboardButton(text="Зарегистрироваться", callback_data="register")
                     keyboard.add(callback_button)
 
@@ -193,10 +345,18 @@ def callback_inline(call):
 
                     bot.answer_callback_query(callback_query_id=call.id, show_alert=False,
                                               text="Вы зарегистрировались")
+        elif call.data == "shop":
+            players[call.from_user.id].open_shop(call)
+
+        elif call.data.isdigit() and 0 <= int(call.data) <= 5:
+            players[call.from_user.id].buy(call)
+
+        elif call.data == 'shop_back':
+            players[call.from_user.id].back_shop(call)
 
 
 @bot.message_handler(content_types=['photo'])
-def handle_photo(message):
+def delete_photo(message):
     if message.chat.id in mafia_games:
         bot.delete_message(
             chat_id=message.chat.id,
