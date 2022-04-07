@@ -1,11 +1,12 @@
-import telebot
-import traceback
-import time
-from telebot import types
 import threading
-import requests
-from players import *
+import time
+import traceback
 
+import requests
+import telebot
+
+from players import *
+from mafia import *
 
 TOKEN = '5220830717:AAHoxS5mT7ODuAAirBtJt59gC5EEuMBac8w'
 
@@ -47,7 +48,12 @@ class GameMafia:
                 message_id=i,
             )
 
+        # Распределение ролей
+        for i in mafia_registrations[group_id][0]:
+            pass
+
         self.players = mafia_registrations[group_id][0]
+        print(self.players)
 
     def iteration(self):
         return
@@ -95,6 +101,7 @@ class Timer:
                         mafia_registrations[i][1].append(message.id)
 
                     elif mafia_registrations[i][2] <= now:
+
                         game = GameMafia(i)
                         mafia_games[i] = game
 
