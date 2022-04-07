@@ -177,6 +177,11 @@ def start_command(message):
 
 @bot.message_handler(commands=['profile'])
 def stop_registration(message):
+    bot.delete_message(
+        chat_id=message.chat.id,
+        message_id=message.id,
+    )
+
     if message.chat.type == 'private':
         players[message.from_user.id].print_info()
 
