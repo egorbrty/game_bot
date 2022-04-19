@@ -1,21 +1,34 @@
 import telebot
 import traceback
 import time
-from telebot import types
 import threading
 import requests
-import sqlite3
 import random
+from players import *
 
 
 TOKEN = '5312049767:AAGQlrrbIcWrF8esJBwOkwadwvoW6Ro2d3Y'
-bot = telebot.TeleBot(TOKEN)
+
+
+class MyBot(telebot.TeleBot):
+    def __init__(self, token):
+        super().__init__(token)
+
+    def send_message(self, *args, **args2):
+        try:
+            a = super().send_message(*args, **args2)
+            return a
+        except Exception as error:
+            print(error)
+
+
+bot = MyBot(TOKEN)
 
 uno_games = {}
-players = {}
 uno_registrations = {}
 move = {}
 uno_cards = {}
+players = get_players(bot)
 print('start')
 
 
@@ -52,28 +65,46 @@ class Game:
         uno_games[self.group_id] = inf
         uno_cards[self.group_id] = [self.result, []]
 
-        while True:
-            self.move(self.group_id)
+        self.move(self.group_id)
+
 
     def move(self, id_gruop):
-        id = id_gruop
-        for i in uno_games[id]:
-            keyboard = types.InlineKeyboardMarkup()
-            callback_button = types.InlineKeyboardButton(text="Выбрать карту",
-                                                             switch_inline_query_current_chat='')
-            keyboard.add(callback_button)
-            bot.send_message(chat_id=id,
-                                 text=f'Ход игрока: {i[0][1]}', reply_markup=keyboard)
-            move[id][0] = i[0][0]
-            print()
-            print()
-            print()
-            print(move, 5)
-
-            while True:
-                if move[id][0] == 'YES':
-                    print(id, 8)
+        running = True
+        while running:
+            id = id_gruop
+            for i in uno_games[id]:
+                if len(i[1]) == 0:
+                    bot.send_message(chat_id=id,
+                                     text=f'{i[0][1]} выиграл!')
+                    running = False
                     break
+
+                if len(uno_cards[id][0]) == 0:
+                    print(uno_cards)
+                    uno_cards[id][0] = uno_cards[id][1]
+                    print()
+                    print()
+                    print(uno_cards)
+
+                if move[id][0] == 'con':
+                    move[id][0] = 'YES'
+                    continue
+
+                elif move[id][0] == 'rev':
+                    move[id][0] = ''
+                    break
+
+                keyboard = types.InlineKeyboardMarkup()
+                callback_button = types.InlineKeyboardButton(text="Выбрать карту",
+                                                             switch_inline_query_current_chat='')
+                keyboard.add(callback_button)
+                bot.send_message(chat_id=id,
+                                 text=f'Ход игрока: {i[0][1]}', reply_markup=keyboard)
+                move[id][0] = i[0][0]
+
+                while True:
+                    if move[id][0] == 'YES' or move[id][0] == 'con' or move[id][0] == 'rev':
+                        break
 
 
 class Timer:
@@ -168,9 +199,6 @@ def take(user_id, amount, chat_id):
         if i[0][0] == user_id:
             for n in card:
                 i[1].append(n)
-                print(n)
-                print()
-                print()
                 car = uno_cards[chat_id][0].pop(uno_cards[chat_id][0].index(n))
                 uno_cards[chat_id][1].append(car)
             break
@@ -188,7 +216,7 @@ def choise_color(chat_id):
 
 
 def get_text(i, j):
-    players = []
+    player = []
     color = move[i][1][0]
 
     if color == 'r':
@@ -211,21 +239,32 @@ def get_text(i, j):
             card = move[i][1].split('_')[-1]
 
     for name in uno_games[i]:
-        players.append(name[0][1])
+        player.append(name[0][1])
 
     text = f"""Ход игрока: {j[0][1]}\n
 Последняя карта: {card}\n
-Игроки: {', '.join(players)}"""
+Игроки: {', '.join(player)}"""
 
     return text
 
 
 @bot.message_handler(commands=['start'])
 def start_command(message):
+    bot.delete_message(
+        chat_id=message.chat.id,
+        message_id=message.id,
+    )
+
     bot.send_message(
         message.chat.id,
         'Привет! Я бот для игры в UNO! Напишите "/help" для получения дополнительной информации'
     )
+
+    if message.chat.type == 'private' and message.from_user.id not in players:
+        players[message.from_user.id] = Player(message.from_user.id, bot=bot)
+        players[message.from_user.id].add_player()
+
+    players[message.from_user.id].print_info()
 
 
 @bot.message_handler(commands=['help'])
@@ -238,18 +277,18 @@ def help_command(message):
 
 @bot.message_handler(commands=['registration_uno'])
 def registration_command_uno(message):
-    if message.chat.type == 'group':
+    if message.chat.type == 'group' or message.chat.type == 'supergroup':
         start_registration_uno(message.chat.id)
+    else:
+        bot.send_message(message.chat.id, 'Это действие доступно только для групп')
 
 
 @bot.inline_handler(lambda query: len(query.query) == 0)
 def query(inline_query):
-    print(1)
     result = []
     user_id = inline_query.from_user.id
     for i in uno_games:
         for j in uno_games[i]:
-            print(j[0][0], user_id, move[i][0])
             if j[0][0] == user_id and move[i][0] == user_id:
                 result.append(types.InlineQueryResultCachedSticker('take', sticker_file_id=
                 'CAACAgQAAxkBAAEEWjxiSDuIzyI_nqpFwb9ClCksHx3UPwAC-AIAAl9XmQAB_k3V0pbxGtsjBA'))
@@ -275,7 +314,6 @@ def query(inline_query):
 
 @bot.chosen_inline_handler(lambda chosen_inline_handler: True)
 def chosen_handler(chosen_inline_handler):
-    print(2)
     result_id = chosen_inline_handler.result_id
     running = True
 
@@ -294,33 +332,20 @@ def chosen_handler(chosen_inline_handler):
             elif result_id.split('_')[-1] == '+4':
                 choise_color(i)
 
-
             elif result_id.split('_')[-1] == 'color':
                 choise_color(i)
 
             elif result_id.split('_')[-1] == 'reverse':
-                pass
-                """
                 for j in uno_games[i]:
-                    print(j[0][0], move[i][0])
                     if j[0][0] == move[i][0]:
                         ind = uno_games[i].index(j)
-                player = uno_games[i][ind] + uno_games[i][ind:] + uno_games[i][:ind]
-                player.reverse()
+
+                player = uno_games[i][:ind][::-1] + uno_games[i][ind + 1:][::-1] + [uno_games[i][ind]]
                 move[i][0] = 'rev'
-                uno_games[i][1] = player
+                uno_games[i] = player
 
             elif result_id.split('_')[-1] == 'skipping':
-                for j in uno_games[i]:
-                    print(j[0][0], move[i][0])
-                    if j[0][0] == move[i][0]:
-                        ind = uno_games[i].index(j)
-                player = uno_games[i][ind:] + uno_games[i][:ind] + uno_games[i][ind]
-                print(player)
-                uno_games[i][1] = player
-
-                move[i][0] = 'YES'
-                """
+                move[i][0] = 'con'
 
             else:
                 move[i][0] = 'YES'
@@ -343,7 +368,7 @@ def chosen_handler(chosen_inline_handler):
 
 
 @bot.message_handler(commands=['start_game'])
-def registration_command_mafia(message):
+def registration_command_uno(message):
     if message.chat.id not in uno_registrations:
         bot.send_message(message.chat.id, 'Регистрация не ведется')
     elif message.chat.type == 'group' or message.chat.type == 'supergroup':
@@ -353,25 +378,72 @@ def registration_command_mafia(message):
         bot.send_message(message.chat.id, 'Это действие доступно только для групп')
 
 
+@bot.message_handler(commands=['profile'])
+def stop_registration(message):
+    bot.delete_message(
+        chat_id=message.chat.id,
+        message_id=message.id,
+    )
+
+    if message.chat.type == 'private':
+        players[message.from_user.id].print_info()
+
+
+@bot.message_handler(commands=['cancel_registration'])
+def stop_registration(message):
+    bot.delete_message(
+        chat_id=message.chat.id,
+        message_id=message.id,
+    )
+
+    if message.chat.type != 'group' and message.chat.type != 'supergroup':
+        bot.send_message(message.chat.id, 'Это действие возможно только в группе')
+        return
+
+    group_id = message.chat.id
+
+    if group_id in uno_games:
+        bot.send_message(group_id, 'Вы уже играете!')
+        return
+
+    if group_id not in uno_registrations:
+        bot.send_message(group_id, 'Вы не начали набор в игру')
+        return
+
+    for i in uno_registrations[group_id][1]:
+        bot.delete_message(
+            chat_id=group_id,
+            message_id=i,
+        )
+
+    del uno_registrations[group_id]
+
+    bot.send_message(group_id, 'Регистрация отменена')
+
+
 def start_registration_uno(group_id):
     if group_id in uno_registrations:
         bot.send_message(group_id, 'Регистрация уже началась')
+        return
 
-    elif group_id in uno_games:
+    if group_id in uno_games:
         bot.send_message(group_id, 'Вы уже играете!')
+        return
+    if not isBotAdmin(group_id):
+        return
 
     # Проверка на то, ведутся ли еще игры
-    else:
-        keyboard = types.InlineKeyboardMarkup()
-        callback_button = types.InlineKeyboardButton(text="Зарегистрироваться", callback_data="register")
-        keyboard.add(callback_button)
 
-        message_id = bot.send_message(group_id,
-                                      "Открыт набор для игры в UNO",
-                                      reply_markup=keyboard,
-                                      parse_mode='Markdown').id
+    keyboard = types.InlineKeyboardMarkup()
+    callback_button = types.InlineKeyboardButton(text="Зарегистрироваться", callback_data="register")
+    keyboard.add(callback_button)
 
-        uno_registrations[group_id] = [[], [message_id], timer.start_registration(group_id)]
+    message_id = bot.send_message(group_id,
+                                  "Открыт набор для игры в UNO",
+                                  reply_markup=keyboard,
+                                  parse_mode='Markdown').id
+
+    uno_registrations[group_id] = [[], [message_id], timer.start_registration(group_id)]
 
 
 @bot.callback_query_handler(func=lambda call: True)
@@ -406,7 +478,6 @@ def callback_inline(call):
                                               text="Вы зарегистрировались")
 
         elif call.data in ['r', 'y', 'g', 'b']:
-            print(2323)
             if call.from_user.id == move[call.message.chat.id][0]:
                 if call.data == 'r':
                     text = '🔴'
@@ -421,12 +492,24 @@ def callback_inline(call):
                     text = '🟢'
                 bot.send_message(chat_id=call.message.chat.id,
                                  text=f'Цвет: {text}')
-                move[call.message.chat.id][1] = call.data + '_'
-                move[call.message.chat.id][0] = 'YES'
-                while True:
-                    if move[call.message.chat.id][0] != 'YES':
-                        break
-                take(move[call.message.chat.id][0], 4, call.message.chat.id)
+                if move[call.message.chat.id][1].split('_')[-1] == '+4':
+                    move[call.message.chat.id][1] = call.data + '_'
+                    move[call.message.chat.id][0] = 'YES'
+                    while True:
+                        if move[call.message.chat.id][0] != 'YES':
+                            break
+                    take(move[call.message.chat.id][0], 4, call.message.chat.id)
+                else:
+                    move[call.message.chat.id][0] = 'YES'
+
+        elif call.data == "shop":
+            players[call.from_user.id].open_shop(call)
+
+        elif call.data.isdigit() and 0 <= int(call.data) <= 5:
+            players[call.from_user.id].buy(call)
+
+        elif call.data == 'shop_back':
+            players[call.from_user.id].back_shop(call)
 
 
 
