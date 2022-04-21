@@ -76,50 +76,53 @@ class Game:
         while running:
             id = id_gruop
             for i in uno_games[id]:
-                if len(i[1]) == 0:
-                    bot.send_message(chat_id=id,
-                                     text=f'{i[0][1]} выиграл!')
-                    con = sqlite3.connect("files/players.sqlite")
-                    cur = con.cursor()
-                    mas = cur.execute(f"""SELECT money FROM players WHERE id={i[0][1]}""").fetchall()[0]
-                    con.close()
+                if running:
+                    for j in uno_games[id]:
+                        if len(j[1]) == 0:
+                            bot.send_message(chat_id=id,
+                                             text=f'{j[0][1]} выиграл!')
+                            con = sqlite3.connect("files/players.sqlite")
+                            cur = con.cursor()
+                            mas = cur.execute(f"""SELECT money FROM players WHERE id={i[0][0]}""").fetchall()[0]
+                            con.close()
 
-                    con = sqlite3.connect("files/players.sqlite")
-                    cur = con.cursor()
-                    cur.execute(f"""UPDATE players SET money={mas[0] + 50} WHERE ID={i[0][1]}""")
-                    con.commit()
+                            con = sqlite3.connect("files/players.sqlite")
+                            cur = con.cursor()
+                            cur.execute(f"""UPDATE players SET money={mas[0] + 50} WHERE ID={i[0][0]}""")
+                            con.commit()
 
-                    con.close()
-                    running = False
-                    del uno_games[id]
-                    del move[id]
-                    del uno_cards[id]
-                    del uno_invent[id]
-                    break
+                            con.close()
+                            running = False
+                            del uno_games[id]
+                            del move[id]
+                            del uno_cards[id]
+                            if id in uno_invent:
+                                del uno_invent[id]
+                            break
+                if running:
+                    if len(uno_cards[id][0]) == 0:
+                        uno_cards[id][0] = uno_cards[id][1]
+                        uno_cards[id][1] = []
 
-                if len(uno_cards[id][0]) == 0:
-                    uno_cards[id][0] = uno_cards[id][1]
-                    uno_cards[id][1] = []
+                    if move[id][0] == 'con':
+                        move[id][0] = 'YES'
+                        continue
 
-                if move[id][0] == 'con':
-                    move[id][0] = 'YES'
-                    continue
-
-                elif move[id][0] == 'rev':
-                    move[id][0] = ''
-                    break
-
-                keyboard = types.InlineKeyboardMarkup()
-                callback_button = types.InlineKeyboardButton(text="Выбрать карту",
-                                                             switch_inline_query_current_chat='')
-                keyboard.add(callback_button)
-                bot.send_message(chat_id=id,
-                                 text=f'Ход игрока: {i[0][1]}', reply_markup=keyboard)
-                move[id][0] = i[0][0]
-
-                while True:
-                    if move[id][0] == 'YES' or move[id][0] == 'con' or move[id][0] == 'rev':
+                    elif move[id][0] == 'rev':
+                        move[id][0] = ''
                         break
+
+                    keyboard = types.InlineKeyboardMarkup()
+                    callback_button = types.InlineKeyboardButton(text="Выбрать карту",
+                                                                 switch_inline_query_current_chat='')
+                    keyboard.add(callback_button)
+                    bot.send_message(chat_id=id,
+                                     text=f'Ход игрока: {i[0][1]}', reply_markup=keyboard)
+                    move[id][0] = i[0][0]
+
+                    while True:
+                        if move[id][0] == 'YES' or move[id][0] == 'con' or move[id][0] == 'rev':
+                            break
 
 
 def isBotAdmin(chat_id):
@@ -156,6 +159,7 @@ def take(user_id, amount, chat_id):
         card = random.sample(uno_cards[chat_id][0], amount)
     else:
         card = random.sample(uno_cards[chat_id][0], len(uno_cards[id][0]))
+        card += random.sample(uno_cards[chat_id][0], amount - len(uno_cards[id][0]))
     for i in uno_games[chat_id]:
         if str(i[0][0]) == str(user_id):
             for n in card:
