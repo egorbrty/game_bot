@@ -29,6 +29,7 @@ uno_games = {}
 uno_registrations = {}
 move = {}
 uno_cards = {}
+uno_invent = {}
 print('start')
 
 
@@ -78,10 +79,22 @@ class Game:
                 if len(i[1]) == 0:
                     bot.send_message(chat_id=id,
                                      text=f'{i[0][1]} выиграл!')
+                    con = sqlite3.connect("files/players.sqlite")
+                    cur = con.cursor()
+                    mas = cur.execute(f"""SELECT money FROM players WHERE id={i[0][1]}""").fetchall()[0]
+                    con.close()
+
+                    con = sqlite3.connect("files/players.sqlite")
+                    cur = con.cursor()
+                    cur.execute(f"""UPDATE players SET money={mas[0] + 50} WHERE ID={i[0][1]}""")
+                    con.commit()
+
+                    con.close()
                     running = False
                     del uno_games[id]
                     del move[id]
                     del uno_cards[id]
+                    del uno_invent[id]
                     break
 
                 if len(uno_cards[id][0]) == 0:
@@ -139,8 +152,10 @@ def isBotAdmin(chat_id):
 
 
 def take(user_id, amount, chat_id):
-    card = random.sample(uno_cards[chat_id][0], amount)
-    print(card)
+    if len(uno_cards[chat_id][0]) >= amount:
+        card = random.sample(uno_cards[chat_id][0], amount)
+    else:
+        card = random.sample(uno_cards[chat_id][0], len(uno_cards[id][0]))
     for i in uno_games[chat_id]:
         if str(i[0][0]) == str(user_id):
             for n in card:
@@ -318,8 +333,7 @@ def registration_command_uno(message):
     if message.chat.id not in uno_registrations:
         bot.send_message(message.chat.id, 'Регистрация не ведется')
     elif message.chat.type == 'group' or message.chat.type == 'supergroup':
-        print(uno_registrations[message.chat.id][0])
-        if 2 <= len(uno_registrations[message.chat.id][0]) <= 8:
+        if len(uno_registrations[message.chat.id][0]) <= 8:
             if len(uno_games) == 0:
                 Game(message.chat.id)
             else:
@@ -348,7 +362,6 @@ def get_text_messages(message):
         if message.chat.id in move:
             if message.from_user.id == move[message.chat.id][0]:
                 markup = types.InlineKeyboardMarkup()
-                print(message.from_user.id)
 
                 con = sqlite3.connect("files/players.sqlite")
                 cur = con.cursor()
@@ -362,6 +375,8 @@ def get_text_messages(message):
                 markup.add(types.InlineKeyboardButton('Закрыть', callback_data='Закрыть'))
                 bot.send_message(message.chat.id, text=f"Инвентарь игрока {message.from_user.first_name} открыт",
                                  reply_markup=markup)
+                uno_invent[message.chat.id] = message.from_user.id
+
             else:
                 bot.send_message(message.chat.id, text=f"Инвентарь доступен только в свой ход!")
         else:
@@ -431,9 +446,16 @@ def callback_inline(call):
         if call.data == "register":
             if call.message.chat.id in uno_registrations:
                 registered_players = uno_registrations[call.message.chat.id][0]
-
-                if call.from_user.id not in [i[0] for i in registered_players]:
-
+                r = []
+                for i in [uno_registrations[i][0] for i in uno_registrations]:
+                    for j in i:
+                        r.append(j[0])
+                r1 = []
+                for i in uno_games:
+                    for j in ([j[0][0] for j in uno_games[i]]):
+                        r1.append(j)
+                if (call.from_user.id not in [i[0] for i in registered_players]) and (call.from_user.id not in r) and\
+                        (call.from_user.id not in r1):
                     registered_players.append((call.from_user.id, call.from_user.first_name))
                     text = f"""Открыт набор для игры в UNO\n
 Зарегистрировались:\n"""
@@ -482,7 +504,6 @@ def callback_inline(call):
                     while True:
                         if move[call.message.chat.id][0] != 'YES':
                             break
-                    print(565656565)
                     take(move[call.message.chat.id][0], 4, call.message.chat.id)
                 else:
                     move[call.message.chat.id][1] = call.data + '_'
@@ -501,7 +522,8 @@ def callback_inline(call):
             players[call.from_user.id].back_shop(call)
 
         elif call.data == 'Пропуск хода':
-            if call.from_user.id == move[call.message.chat.id][0]:
+            if call.from_user.id == move[call.message.chat.id][0] and\
+                    (call.from_user.id == uno_invent[call.message.chat.id]):
                 bot.delete_message(
                     chat_id=call.message.chat.id,
                     message_id=call.message.message_id,
@@ -520,7 +542,12 @@ def callback_inline(call):
                 con.close()
 
         elif call.data == 'Смена цвета':
-            if call.from_user.id == move[call.message.chat.id][0]:
+            if call.from_user.id == move[call.message.chat.id][0] and\
+                    (call.from_user.id == uno_invent[call.message.chat.id]):
+                bot.delete_message(
+                    chat_id=call.message.chat.id,
+                    message_id=call.message.message_id,
+                )
                 move[call.message.chat.id][1] = 'n_color'
                 choise_color(call.message.chat.id)
                 con = sqlite3.connect("files/players.sqlite")
@@ -536,7 +563,12 @@ def callback_inline(call):
                 con.close()
 
         elif call.data == '+2 карты любому противнику':
-            if call.from_user.id == move[call.message.chat.id][0]:
+            if call.from_user.id == move[call.message.chat.id][0] and\
+                    (call.from_user.id == uno_invent[call.message.chat.id]):
+                bot.delete_message(
+                    chat_id=call.message.chat.id,
+                    message_id=call.message.message_id,
+                )
                 markup = types.InlineKeyboardMarkup()
                 for i in uno_games[call.message.chat.id]:
                     if i[0][0] != call.from_user.id:
@@ -544,16 +576,21 @@ def callback_inline(call):
                 bot.send_message(call.message.chat.id, text=f"Выбери игрока:",
                                  reply_markup=markup)
 
-
         elif call.data == 'Закрыть':
-            if call.from_user.id == move[call.message.chat.id][0]:
+            if call.from_user.id == move[call.message.chat.id][0] and\
+                    (call.from_user.id == uno_invent[call.message.chat.id]):
                 bot.delete_message(
                     chat_id=call.message.chat.id,
                     message_id=call.message.message_id,
                 )
 
         elif call.data.split('_')[-1] == '+2':
-            if call.from_user.id == move[call.message.chat.id][0]:
+            if call.from_user.id == move[call.message.chat.id][0] and\
+                    (call.from_user.id == uno_invent[call.message.chat.id]):
+                bot.delete_message(
+                    chat_id=call.message.chat.id,
+                    message_id=call.message.message_id,
+                )
                 bot.send_message(call.message.chat.id, text=f"Успешно")
                 take(call.data.split('_')[0], 2, call.message.chat.id)
 
